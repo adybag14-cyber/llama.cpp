@@ -9280,6 +9280,11 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     for (ggml_type type_a : { GGML_TYPE_Q3_K, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ4_XS }) {
         test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 512, 1, 5120, { 1, 1 }, { 1, 1 }));
     }
+    for (int k : { 6144, 17408 }) {
+        test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 512, 1, k, { 1, 1 }, { 1, 1 }));
+    }
+    test_cases.emplace_back(new test_mul_mat_vec_fusion(GGML_TYPE_IQ4_XS, GGML_GLU_OP_SWIGLU, 1, 512, 5120, false, 1, 1,
+                                                        false, false, true, false, { 1, 1 }));
     for (int n : { 4, 5, 8 }) {
         test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 512, n, 5120, { 1, 1 }, { 1, 1 }));
     }
@@ -10335,6 +10340,13 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
             test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 17408, bs, 5120, { 1, 1 }, { 1, 1 }));
         }
     }
+
+    // Remaining IQ4_XS matrix shapes in the target Qwen3.5 27B quantization.
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 6144, 1, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 10240, 1, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 12288, 1, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 5120, 1, 6144, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 5120, 1, 17408, { 1, 1 }, { 1, 1 }));
 
     // qwen3-30b-a3b
     for (int bs : {1, 4, 8, 32, 64, 128, 256, 512}) {

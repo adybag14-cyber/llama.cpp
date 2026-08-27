@@ -71,7 +71,6 @@ enum mmvq_parameter_table_id {
     MMVQ_PARAMETERS_RDNA2,
     MMVQ_PARAMETERS_RDNA3_0,
     MMVQ_PARAMETERS_RDNA4,
-    MMVQ_PARAMETERS_ADA,
     MMVQ_PARAMETERS_GB10
 };
 
@@ -86,8 +85,6 @@ static constexpr __device__ mmvq_parameter_table_id get_device_table_id() {
     return MMVQ_PARAMETERS_GCN;
 #elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= GGML_CUDA_CC_TURING && __CUDA_ARCH__ < GGML_CUDA_CC_AMPERE
     return MMVQ_PARAMETERS_TURING;
-#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ == GGML_CUDA_CC_ADA_LOVELACE
-    return MMVQ_PARAMETERS_ADA;
 #elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ == GGML_CUDA_CC_DGX_SPARK
     return MMVQ_PARAMETERS_GB10;
 #else
@@ -110,9 +107,6 @@ static __host__ mmvq_parameter_table_id get_device_table_id(int cc) {
     }
     if (GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_TURING && ggml_cuda_highest_compiled_arch(cc) < GGML_CUDA_CC_AMPERE) {
         return MMVQ_PARAMETERS_TURING;
-    }
-    if (cc == GGML_CUDA_CC_ADA_LOVELACE && ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_ADA_LOVELACE) {
-        return MMVQ_PARAMETERS_ADA;
     }
     if (GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) == GGML_CUDA_CC_DGX_SPARK) {
         return MMVQ_PARAMETERS_GB10;
@@ -479,13 +473,6 @@ static constexpr __host__ __device__ int calc_nwarps(ggml_type type, int ncols_d
         }
         return 1;
     }
-    if (table_id == MMVQ_PARAMETERS_ADA) {
-        if (ncols_dst == 1 && type == GGML_TYPE_IQ4_XS) {
-            // 47 registers/thread keeps occupancy register-limited at 40 warps/SM while halving the per-warp K loop.
-            return 8;
-        }
-        return calc_nwarps(type, ncols_dst, MMVQ_PARAMETERS_GENERIC, small_k, halve_iters);
-    }
     if (table_id == MMVQ_PARAMETERS_TURING) {
         if (ncols_dst == 1) {
             switch (type) {
@@ -539,7 +526,7 @@ static constexpr __host__ __device__ int calc_nwarps(ggml_type type, int ncols_d
 
 static constexpr __host__ __device__ int calc_rows_per_block(int ncols_dst, int table_id, bool small_k = false, int nwarps = 1) {
     if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_GCN || table_id == MMVQ_PARAMETERS_TURING ||
-        table_id == MMVQ_PARAMETERS_ADA || table_id == MMVQ_PARAMETERS_GB10) {
+        table_id == MMVQ_PARAMETERS_GB10) {
         switch (ncols_dst) {
             case 1:
                 return small_k ? nwarps : 1;
