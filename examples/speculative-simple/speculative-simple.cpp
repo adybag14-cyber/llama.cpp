@@ -30,6 +30,12 @@ int main(int argc, char ** argv) {
         return 1;
     }
 
+    if (params.prompt.empty()) {
+        LOG_ERR("no prompt provided, use -p \"text\"\n");
+        common_log_flush(common_log_main());
+        return 1;
+    }
+
     const auto output_limits = common_speculative_get_output_limits(
             params.n_batch, params.n_parallel, common_speculative_n_max(&params.speculative));
     params.n_outputs_max = output_limits.total;
@@ -76,6 +82,12 @@ int main(int argc, char ** argv) {
     // Tokenize the prompt
     std::vector<llama_token> inp;
     inp = common_tokenize(ctx_tgt, params.prompt, true, true);
+
+    if (inp.empty()) {
+        LOG_ERR("%s: prompt tokenization produced no tokens\n", __func__);
+        common_log_flush(common_log_main());
+        return 1;
+    }
 
     if (llama_n_ctx(ctx_tgt) < (uint32_t) inp.size()) {
         LOG_ERR("%s: the prompt exceeds the context size (%d tokens, ctx %d)\n", __func__, (int) inp.size(), llama_n_ctx(ctx_tgt));
