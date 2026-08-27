@@ -9275,6 +9275,9 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
             test_cases.emplace_back(new test_mul_mat(type_a, type_b, 16, 1, 256, {1,  1}, {1, 1}));
         }
     }
+
+    // Qwen3.5 27B dense FFN decode slice: preserve the exact inner dimension while keeping CPU validation quick.
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 512, 1, 5120, { 1, 1 }, { 1, 1 }));
 #else
     // m = a rows
     // n = b rows
@@ -10317,6 +10320,13 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
             for (ggml_type type_b : {GGML_TYPE_F32}) {
                 test_cases.emplace_back(new test_mul_mat(type_a, type_b, 4096, bs, 14336, {1,  1}, {1, 1}));
             }
+        }
+    }
+
+    // Qwen3.5 27B dense FFN gate/up projection.
+    for (int bs : { 1, 8, 32, 48, 64, 128, 512 }) {
+        for (ggml_type type_a : { GGML_TYPE_IQ3_S, GGML_TYPE_IQ4_XS }) {
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 17408, bs, 5120, { 1, 1 }, { 1, 1 }));
         }
     }
 
