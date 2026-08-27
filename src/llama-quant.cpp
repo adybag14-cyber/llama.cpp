@@ -981,7 +981,9 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
 
     // make a list of weights
     std::vector<const llama_model_loader::llama_tensor_weight *> tensors;
+    std::vector<std::string> source_names;
     tensors.reserve(ml.weights_map.size());
+    source_names.reserve(ml.weights_map.size());
     for (const auto & it : ml.weights_map) {
         const std::string remapped_name(remap_layer(it.first, prune_list, mapped, blk_id));
         if (remapped_name.empty()) {
@@ -994,6 +996,7 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
             LLAMA_LOG_DEBUG("%s: tensor %s remapped to %s\n", __func__, it.first.c_str(), ggml_get_name(it.second.tensor));
         }
         tensors.push_back(&it.second);
+        source_names.push_back(it.first);
     }
     if (!prune_list.empty()) {
         gguf_set_val_u32(ctx_out.get(), ml.llm_kv(LLM_KV_BLOCK_COUNT).c_str(), blk_id);
@@ -1150,7 +1153,15 @@ static void llama_model_quantize_impl(const std::string & fname_inp, const std::
                 }
                 tensor->data = read_data.data();
             }
-            ml.load_data_for(tensor);
+            const std::string output_name = ggml_get_name(tensor);
+            if (source_names[i] != output_name) {
+                // Layer pruning compacts output layer indices, but the bytes still live under the original input name.
+                ggml_set_name(tensor, source_names[i].c_str());
+                ml.load_data_for(tensor);
+                ggml_set_name(tensor, output_name.c_str());
+            } else {
+                ml.load_data_for(tensor);
+            }
         }
 
         LLAMA_LOG_INFO("[%4d/%4d] %-36s - [%s], type = %6s, ",
