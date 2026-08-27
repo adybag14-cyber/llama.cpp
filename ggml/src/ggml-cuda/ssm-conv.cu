@@ -2,6 +2,38 @@
 #include "ssm-conv.cuh"
 #include "unary.cuh"
 
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+template <bool apply_silu, size_t split_d_inner>
+static __global__ void ssm_conv_dconv4_decode_f32(const float * src0_ptr,
+                                                  const float * src1_ptr,
+                                                  const float * bias_ptr,
+                                                  const int     src0_nb2,
+                                                  float *       dst_ptr,
+                                                  const int     dst_nb0,
+                                                  const int     dst_nb2) {
+    ggml_cuda_pdl_lc();
+    const int tid  = threadIdx.x;
+    const int bidx = blockIdx.x;
+    const int bidy = blockIdx.y;
+
+    const float4 * x_block = (const float4 *) ((const char *) src0_ptr + bidx * src0_nb2) + bidy * split_d_inner;
+    const float4 * w_block = (const float4 *) src1_ptr + bidy * split_d_inner;
+    float *        y_block = (float *) ((char *) dst_ptr + bidx * dst_nb2 + bidy * split_d_inner * dst_nb0);
+
+    ggml_cuda_pdl_sync();
+    const float4 x = x_block[tid];
+    const float4 w = w_block[tid];
+
+    float sumf = 0.0f;
+    sumf       = fmaf(x.x, w.x, sumf);
+    sumf       = fmaf(x.y, w.y, sumf);
+    sumf       = fmaf(x.z, w.z, sumf);
+    sumf       = fmaf(x.w, w.w, sumf);
+    sumf += bias_ptr != nullptr ? bias_ptr[bidy * split_d_inner + tid] : 0.0f;
+    y_block[tid] = apply_silu ? ggml_cuda_op_silu_single(sumf) : sumf;
+}
+#endif
+
 template <bool apply_silu, size_t split_d_inner, size_t d_conv>
 static __global__ void ssm_conv_f32(const float * src0_ptr, const float * src1_ptr,
                                     const float * bias_ptr,
@@ -133,6 +165,22 @@ static void ssm_conv_f32_cuda(const float * src0, const float * src1, const floa
 
     auto launch_kernel = [&](auto NC) {
         constexpr int kNC = decltype(NC)::value;
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+        if constexpr (kNC == 4) {
+            const bool aligned_decode = n_t == 1 && src0_nb1 == (int) sizeof(float4) &&
+                                        src0_nb2 % (int) sizeof(float4) == 0 && src1_nb1 == (int) sizeof(float4) &&
+                                        reinterpret_cast<uintptr_t>(src0) % alignof(float4) == 0 &&
+                                        reinterpret_cast<uintptr_t>(src1) % alignof(float4) == 0;
+            if (aligned_decode) {
+                const dim3                           blocks(n_s, (nr + threads - 1) / threads, 1);
+                const ggml_cuda_kernel_launch_params launch_params =
+                    ggml_cuda_kernel_launch_params(blocks, threads, 0, stream);
+                ggml_cuda_kernel_launch(ssm_conv_dconv4_decode_f32<apply_silu, threads>, launch_params, src0, src1,
+                                        bias, src0_nb2, dst, dst_nb0, dst_nb2);
+                return;
+            }
+        }
+#endif
         if (n_t <= 32) {
             const dim3 blocks(n_s, (nr + threads - 1) / threads, 1);
             const ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks, threads, 0, stream);

@@ -9108,6 +9108,10 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+    test_cases.emplace_back(
+        new test_ssm_conv(GGML_TYPE_F32, { 4, 10240, 1, 1 }, { 4, 10240, 1, 1 }));  // Qwen3.5 27B decode
+    test_cases.emplace_back(new test_ssm_conv_bias_silu(GGML_TYPE_F32, { 4, 10240, 1, 1 }, { 4, 10240, 1, 1 }, false));
+
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 16, 1, 1024, 1, 32, 4)); // Mamba-1
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 128, 64, 16, 2, 32, 4)); // Mamba-2
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 256, 64,  8, 2, 32, 4)); // Falcon-H1
@@ -10059,6 +10063,8 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     }
 
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 128, 1, 1));
+    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 48, 128, 1, 1));  // Qwen3.5 27B
+    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 48, 128, 4, 1));  // Qwen3.5 27B multi-token
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 16, 1, 1));
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 16, 1, 1, 1, true, true));
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 16, 1, 1, 1, false, true));
@@ -10468,6 +10474,10 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
         }
     }
 
+    // Qwen3.5 27B decode
+    test_cases.emplace_back(new test_ssm_conv(GGML_TYPE_F32, { 4, 10240, 1, 1 }, { 4, 10240, 1, 1 }));
+    test_cases.emplace_back(new test_ssm_conv_bias_silu(GGML_TYPE_F32, { 4, 10240, 1, 1 }, { 4, 10240, 1, 1 }, false));
+
     // Examples from granite-4.0-h-1b/ggml-model-Q8_0.gguf
     test_cases.emplace_back(new test_ssm_conv(GGML_TYPE_F32, {515, 3328, 1, 1}, {4, 3328, 1, 1})); // prefill
     test_cases.emplace_back(new test_ssm_conv(GGML_TYPE_F32, {937, 8192, 1, 1}, {4, 8192, 1, 1})); // prefill
@@ -10489,10 +10499,12 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
 
     // GATED_DELTA_NET: realistic model configurations
     // TG: n_seq_tokens=1 (autoregressive)
-    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 128, 1, 1));   // Qwen3.5-like: 32 heads, d=128
+    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 48, 128, 1, 1));   // Qwen3.5 27B: 48 heads, d=128
+    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 128, 1, 1));   // smaller GDN configuration
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 16, 64,  1, 1));   // smaller model
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 128, 1, 1, 1, false, true)); // KDA
     // PP: n_seq_tokens=64,256 (prompt processing)
+    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 48, 128, 64, 1));  // Qwen3.5 27B PP-64
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 128, 64, 1));  // PP-64
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 128, 256, 1)); // PP-256
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 128, 512, 1)); // PP-512
