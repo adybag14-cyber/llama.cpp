@@ -308,8 +308,8 @@ bool ggml_cuda_should_use_mmvq(enum ggml_type type, int cc, int64_t ne11) {
             case GGML_TYPE_Q5_K:
                 return ne11 <= 7;
             case GGML_TYPE_IQ4_XS:
-                // At N=8 the MMQ IMMA path amortizes its setup cost and is substantially faster on Ada.
-                return ne11 <= 7;
+                // MMQ's IMMA path wins from N=5; MMVQ remains faster at N=4 on Ada.
+                return ne11 <= 4;
             default:
                 return ne11 <= MMVQ_MAX_BATCH_SIZE;
         }
