@@ -66,6 +66,7 @@ static constexpr __host__ __device__ int get_vdr_mmvq(ggml_type type) {
 
 enum mmvq_parameter_table_id {
     MMVQ_PARAMETERS_GENERIC = 0,
+    MMVQ_PARAMETERS_ADA,
     MMVQ_PARAMETERS_TURING,
     MMVQ_PARAMETERS_GCN,
     MMVQ_PARAMETERS_RDNA2,
@@ -83,6 +84,8 @@ static constexpr __device__ mmvq_parameter_table_id get_device_table_id() {
     return MMVQ_PARAMETERS_RDNA2;
 #elif defined(GCN) || defined(CDNA)
     return MMVQ_PARAMETERS_GCN;
+#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ == GGML_CUDA_CC_ADA_LOVELACE
+    return MMVQ_PARAMETERS_ADA;
 #elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= GGML_CUDA_CC_TURING && __CUDA_ARCH__ < GGML_CUDA_CC_AMPERE
     return MMVQ_PARAMETERS_TURING;
 #elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ == GGML_CUDA_CC_DGX_SPARK
@@ -104,6 +107,9 @@ static __host__ mmvq_parameter_table_id get_device_table_id(int cc) {
     }
     if (GGML_CUDA_CC_IS_GCN(cc) || GGML_CUDA_CC_IS_CDNA(cc)) {
         return MMVQ_PARAMETERS_GCN;
+    }
+    if (GGML_CUDA_CC_IS_NVIDIA(cc) && cc == GGML_CUDA_CC_ADA_LOVELACE) {
+        return MMVQ_PARAMETERS_ADA;
     }
     if (GGML_CUDA_CC_IS_NVIDIA(cc) && ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_TURING && ggml_cuda_highest_compiled_arch(cc) < GGML_CUDA_CC_AMPERE) {
         return MMVQ_PARAMETERS_TURING;
@@ -398,7 +404,7 @@ static constexpr __device__ int get_mmvq_mmid_max_batch_for_device() {
 }
 
 static constexpr __host__ __device__ int calc_nwarps(ggml_type type, int ncols_dst, mmvq_parameter_table_id table_id, bool small_k = false, bool halve_iters = false) {
-    if (table_id == MMVQ_PARAMETERS_GENERIC) {
+    if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_ADA) {
         switch (ncols_dst) {
             case 1:
             case 2:
@@ -525,8 +531,8 @@ static constexpr __host__ __device__ int calc_nwarps(ggml_type type, int ncols_d
 }
 
 static constexpr __host__ __device__ int calc_rows_per_block(int ncols_dst, int table_id, bool small_k = false, int nwarps = 1) {
-    if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_GCN || table_id == MMVQ_PARAMETERS_TURING ||
-        table_id == MMVQ_PARAMETERS_GB10) {
+    if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_ADA || table_id == MMVQ_PARAMETERS_GCN ||
+        table_id == MMVQ_PARAMETERS_TURING || table_id == MMVQ_PARAMETERS_GB10) {
         switch (ncols_dst) {
             case 1:
                 return small_k ? nwarps : 1;
@@ -543,6 +549,29 @@ static constexpr __host__ __device__ int calc_rows_per_block(int ncols_dst, int 
         }
     }
     return 1;
+}
+
+static constexpr __host__ __device__ int tuned_rows_n4(
+        ggml_type type, int ncols_dst, bool select_tuned_shape, mmvq_parameter_table_id table_id) {
+    if (table_id != MMVQ_PARAMETERS_ADA || ncols_dst != 4) {
+        return 0;
+    }
+    switch (type) {
+        case GGML_TYPE_Q3_K:
+        case GGML_TYPE_IQ3_S:
+            return 3;
+        case GGML_TYPE_Q4_K:
+            return select_tuned_shape ? 3 : 0;
+        case GGML_TYPE_Q5_K:
+            return select_tuned_shape ? 4 : 0;
+        case GGML_TYPE_IQ3_XXS:
+        case GGML_TYPE_IQ2_S:
+            return 4;
+        case GGML_TYPE_IQ4_XS:
+            return select_tuned_shape ? 3 : 0;
+        default:
+            return 0;
+    }
 }
 
 template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false>
@@ -564,7 +593,8 @@ static __global__ void mul_mat_vec_q(
     constexpr int vdr = get_vdr_mmvq(type);
     constexpr mmvq_parameter_table_id table_id = get_device_table_id();
     constexpr int nwarps = calc_nwarps(type, ncols_dst, table_id, small_k, halve_iters);
-    constexpr int rows_per_cuda_block = calc_rows_per_block(ncols_dst, table_id, small_k, nwarps);
+    constexpr int rows_n4 = tuned_rows_n4(type, ncols_dst, small_k, table_id);
+    constexpr int rows_per_cuda_block = rows_n4 > 0 ? rows_n4 : calc_rows_per_block(ncols_dst, table_id, small_k, nwarps);
     constexpr int warp_size = ggml_cuda_get_physical_warp_size();
 
     constexpr vec_dot_q_cuda_t vec_dot_q_cuda = get_vec_dot_q_cuda(type);
@@ -843,7 +873,8 @@ static std::pair<dim3, dim3> calc_launch_params(
         const int ncols_dst, const int nrows_x, const int nchannels_dst, const int nsamples_or_ntokens,
         const int warp_size, const mmvq_parameter_table_id table_id, const bool small_k = false, const bool halve_iters = false) {
     const int nwarps = calc_nwarps(type, ncols_dst, table_id, small_k, halve_iters);
-    const int rpb = calc_rows_per_block(ncols_dst, table_id, small_k, nwarps);
+    const int rows_n4 = tuned_rows_n4(type, ncols_dst, small_k, table_id);
+    const int rpb = rows_n4 > 0 ? rows_n4 : calc_rows_per_block(ncols_dst, table_id, small_k, nwarps);
     const int64_t nblocks = (nrows_x + rpb - 1) / rpb;
     const dim3 block_nums(nblocks, nchannels_dst, nsamples_or_ntokens);
     const dim3 block_dims(warp_size, nwarps, 1);
@@ -1054,6 +1085,27 @@ static void mul_mat_vec_q_switch_ncols_dst(
         } break;
         case 4: {
             constexpr int c_ncols_dst = 4;
+            if constexpr (type == GGML_TYPE_IQ4_XS || type == GGML_TYPE_Q5_K || type == GGML_TYPE_Q4_K) {
+                bool select_tuned_shape;
+                if constexpr (type == GGML_TYPE_IQ4_XS) {
+                    select_tuned_shape = ncols_x == 5120;
+                } else if constexpr (type == GGML_TYPE_Q5_K) {
+                    select_tuned_shape = nrows_x >= 5120;
+                } else {
+                    select_tuned_shape = ncols_x > 5120 || nrows_x >= 10240;
+                }
+                if (table_id == MMVQ_PARAMETERS_ADA && select_tuned_shape) {
+                    constexpr bool c_tuned_shape = true;
+                    std::pair<dim3, dim3> dims = calc_launch_params<type>(
+                        c_ncols_dst, nrows_x, nchannels_dst, nsamples_dst, warp_size, table_id, c_tuned_shape);
+                    mul_mat_vec_q_switch_fusion<type, c_ncols_dst, c_tuned_shape>(
+                        vx, vy, ids, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,
+                        channel_ratio_fd, stride_channel_x, stride_channel_y, stride_channel_dst,
+                        sample_ratio_fd, stride_sample_x, stride_sample_y, stride_sample_dst,
+                        dims.first, dims.second, 0, ids_stride, stream);
+                    break;
+                }
+            }
             std::pair<dim3, dim3> dims = calc_launch_params<type>(c_ncols_dst, nrows_x, nchannels_dst, nsamples_dst, warp_size, table_id);
             mul_mat_vec_q_switch_fusion<type, c_ncols_dst>(vx, vy, ids, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,
                  channel_ratio_fd, stride_channel_x, stride_channel_y, stride_channel_dst,

@@ -9288,6 +9288,17 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     for (int n : { 4, 5, 8 }) {
         test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 512, n, 5120, { 1, 1 }, { 1, 1 }));
     }
+    for (int k : { 6144, 17408 }) {
+        test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 512, 4, k, { 1, 1 }, { 1, 1 }));
+    }
+    // Qwen3.5 MTP verification slices: cover every active N=4 quant format and inner dimension.
+    for (int k : { 5120, 6144, 17408 }) {
+        for (ggml_type type_a : {
+                 GGML_TYPE_IQ3_S, GGML_TYPE_IQ3_XXS, GGML_TYPE_IQ2_S,
+                 GGML_TYPE_Q3_K, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K }) {
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 512, 4, k, { 1, 1 }, { 1, 1 }));
+        }
+    }
 #else
     // m = a rows
     // n = b rows
@@ -10347,6 +10358,51 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 12288, 1, 5120, { 1, 1 }, { 1, 1 }));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 5120, 1, 6144, { 1, 1 }, { 1, 1 }));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 5120, 1, 17408, { 1, 1 }, { 1, 1 }));
+
+    // All IQ3_S matrix shapes in the target Qwen3.5 27B GGUF, at the MTP verification width.
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_S, GGML_TYPE_F32, 10240, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_S, GGML_TYPE_F32,  5120, 4, 17408, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_S, GGML_TYPE_F32,  6144, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_S, GGML_TYPE_F32, 12288, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_S, GGML_TYPE_F32,  5120, 4, 6144, { 1, 1 }, { 1, 1 }));
+
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 10240, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32,  5120, 4, 17408, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32,  6144, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32, 12288, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ4_XS, GGML_TYPE_F32,  5120, 4, 6144, { 1, 1 }, { 1, 1 }));
+
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q5_K, GGML_TYPE_F32,   1024, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q5_K, GGML_TYPE_F32,   5120, 4, 6144, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q5_K, GGML_TYPE_F32, 248320, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q5_K, GGML_TYPE_F32,   5120, 4, 17408, { 1, 1 }, { 1, 1 }));
+
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q3_K, GGML_TYPE_F32, 5120, 4, 6144, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q3_K, GGML_TYPE_F32, 5120, 4, 17408, { 1, 1 }, { 1, 1 }));
+
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32,  1024, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32,  6144, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32,  5120, 4, 6144, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, 10240, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32,  5120, 4, 17408, { 1, 1 }, { 1, 1 }));
+
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_XXS, GGML_TYPE_F32, 17408, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_XXS, GGML_TYPE_F32, 10240, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_XXS, GGML_TYPE_F32,  6144, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_XXS, GGML_TYPE_F32,  5120, 4, 17408, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_XXS, GGML_TYPE_F32, 12288, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ3_XXS, GGML_TYPE_F32,  5120, 4, 6144, { 1, 1 }, { 1, 1 }));
+
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ2_S, GGML_TYPE_F32, 17408, 4, 5120, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ2_S, GGML_TYPE_F32,  5120, 4, 17408, { 1, 1 }, { 1, 1 }));
+    test_cases.emplace_back(new test_mul_mat(GGML_TYPE_IQ2_S, GGML_TYPE_F32,  6144, 4, 5120, { 1, 1 }, { 1, 1 }));
+
+    // Qwen3.5 MTP vocabulary-head candidates: N=1 draft latency is the authority.
+    for (ggml_type type : {
+             GGML_TYPE_Q5_K, GGML_TYPE_Q4_K, GGML_TYPE_Q4_0, GGML_TYPE_IQ4_XS,
+             GGML_TYPE_Q3_K, GGML_TYPE_IQ3_S, GGML_TYPE_IQ3_XXS }) {
+        test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, 248320, 1, 5120, { 1, 1 }, { 1, 1 }));
+    }
 
     // qwen3-30b-a3b
     for (int bs : {1, 4, 8, 32, 64, 128, 256, 512}) {
